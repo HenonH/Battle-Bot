@@ -1,183 +1,118 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-// SSID and password for the ESP32's access point
-const char* ssid = "hen";
-const char* password = "12345678";  // Set your own password
+const char* ssid = "henesp";
+const char* password = "12345678";
 
-// Web server on port 80
 WebServer server(80);
 
-// Store joystick and slider values
 int xValue = 50;
 int yValue = 50;
-int sliderValue = 50;
+int sliderValue = 0;
+bool joystickEnabled = true;
 
-// HTML content for the web page with Joystick and Slider (Landscape Mode)
 String htmlPage = R"=====( 
 <!DOCTYPE html>
 <html>
 <head>
   <title>Rhoomba Remote</title>
   <style>
-    body {
-      background-color: #DC143C; /* Crimson background */
-      font-family: Arial, sans-serif;
-      color: white;
-      text-align: center;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-    }
-    h1 {
-      margin-top: 10px;
-    }
-    #container {
-      display: flex;
-      justify-content: space-around;
-      align-items: center;
-      flex-direction: row;
-      height: 100vh;
-    }
-    #joystick-container {
-      width: 300px;  /* 1.5x original size */
-      height: 300px; /* 1.5x original size */
-      background-color: white;
-      border-radius: 50%;
-      position: relative;
-      touch-action: none;
-    }
-    #joystick {
-      width: 75px;  /* 1.5x original size */
-      height: 75px; /* 1.5x original size */
-      background-color: #ff4d4d;
-      border-radius: 50%;
-      position: absolute;
-      top: 112.5px; /* Adjusted for the new size */
-      left: 112.5px; /* Adjusted for the new size */
-    }
-    #slider {
-      width: 300px;
-    }
-    #values {
-      margin-top: 10px;
-      text-align: left;
-    }
+    body { background: #DC143C; color: white; text-align: center; margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif; }
+    h1 { margin-top: 10px; }
+    #container { display: flex; justify-content: space-around; align-items: center; height: 100vh; }
+    #joystick-container { width: 300px; height: 300px; background: white; border-radius: 50%; position: relative; touch-action: none; }
+    #joystick { width: 75px; height: 75px; background: #ff4d4d; border-radius: 50%; position: absolute; top: 112.5px; left: 112.5px; }
+    #slider { width: 300px; }
+    button { margin-top: 20px; padding: 10px 20px; font-size: 16px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+    button:active { background: #3e8e41; }
   </style>
 </head>
 <body>
   <h1>Rhoomba Remote</h1>
   <div id="container">
-    <!-- Joystick -->
     <div>
       <div id="joystick-container">
         <div id="joystick"></div>
       </div>
-      <div id="values">
-        <p>X: <span id="xValue">50</span></p>
-        <p>Y: <span id="yValue">50</span></p>
-      </div>
+      <p>X: <span id="xValue">50</span>, Y: <span id="yValue">50</span></p>
+      <button onclick="toggleControl()">Toggle Control</button>
     </div>
-
-    <!-- Slider -->
     <div>
-      <label for="slider">Control:</label>
-      <input type="range" id="slider" min="0" max="100" value="50">
-      <p>Slider: <span id="sliderValue">50</span></p>
+      <label>Control:</label>
+      <input type="range" id="slider" min="0" max="100" value="0">
+      <p>Slider: <span id="sliderValue">0</span></p>
     </div>
   </div>
-
   <script>
     const joystick = document.getElementById('joystick');
     const container = document.getElementById('joystick-container');
     const slider = document.getElementById('slider');
-    let xValue = 50, yValue = 50, sliderValue = 50;
+    let xValue = 50, yValue = 50, sliderValue = 0, joystickEnabled = true;
+    let lastX = 50, lastY = 50, lastSlider = 0;
 
-    // Touch-friendly joystick handling
-    container.addEventListener('touchstart', handleTouchStart, false);
-    container.addEventListener('touchmove', handleTouchMove, false);
-    container.addEventListener('touchend', handleTouchEnd, false);
-
-    function handleTouchStart(event) {
+    container.addEventListener('touchmove', (event) => {
+      if (!joystickEnabled) return;
       event.preventDefault();
-    }
-
-    function handleTouchMove(event) {
       const rect = container.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
-      
       let x = event.touches[0].clientX - centerX;
       let y = event.touches[0].clientY - centerY;
-      const distance = Math.min(Math.sqrt(x * x + y * y), 112.5); // Adjusted for larger size
-
+      const distance = Math.min(Math.sqrt(x * x + y * y), 112.5);
       const angle = Math.atan2(y, x);
       x = distance * Math.cos(angle);
       y = distance * Math.sin(angle);
-
-      joystick.style.left = `${x + 112.5}px`; // Adjusted for larger size
-      joystick.style.top = `${y + 112.5}px`;  // Adjusted for larger size
-
-      xValue = Math.round((x / 112.5) * 50 + 50); // Map to 0-100
-
-      // Reverse Y-axis (0 at bottom, 100 at top)
-      yValue = Math.round(50 - (y / 112.5) * 50); 
-
+      joystick.style.left = `${x + 112.5}px`;
+      joystick.style.top = `${y + 112.5}px`;
+      xValue = Math.round((x / 112.5) * 50 + 50);
+      yValue = Math.round(50 - (y / 112.5) * 50);
       document.getElementById('xValue').textContent = xValue;
       document.getElementById('yValue').textContent = yValue;
-    }
+    });
 
-    function handleTouchEnd(event) {
-      joystick.style.left = `112.5px`;  // Adjusted for larger size
-      joystick.style.top = `112.5px`;   // Adjusted for larger size
-      xValue = 50;
-      yValue = 50;
+    container.addEventListener('touchend', () => {
+      joystick.style.left = '112.5px';
+      joystick.style.top = '112.5px';
+      xValue = yValue = 50;
       document.getElementById('xValue').textContent = xValue;
       document.getElementById('yValue').textContent = yValue;
-    }
+    });
 
-    // Update slider value
-    slider.oninput = function() {
-      sliderValue = this.value;
+    slider.oninput = () => {
+      sliderValue = slider.value;
       document.getElementById('sliderValue').textContent = sliderValue;
     };
 
-    // Function to send values to ESP32
-    function sendData() {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `/update?x=${xValue}&y=${yValue}&slider=${sliderValue}`, true);
-      xhr.send();
+    function toggleControl() {
+      joystickEnabled = !joystickEnabled;
+      alert(`Joystick Control ${joystickEnabled ? 'Enabled' : 'Disabled'}`);
     }
 
-    // Send data every 100ms
+    function sendData() {
+      if (xValue !== lastX || yValue !== lastY || sliderValue !== lastSlider) {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', `/u?x=${xValue}&y=${yValue}&s=${sliderValue}`, true);
+        xhr.send();
+        lastX = xValue; lastY = yValue; lastSlider = sliderValue;
+      }
+    }
+
     setInterval(sendData, 100);
   </script>
 </body>
 </html>
 )=====";
 
-
-// Handle root path "/"
 void handleRoot() {
   server.send(200, "text/html", htmlPage);
 }
 
-// Handle updating joystick and slider values
 void handleUpdate() {
-  if (server.hasArg("x") && server.hasArg("y") && server.hasArg("slider")) {
+  if (server.hasArg("x") && server.hasArg("y") && server.hasArg("s")) {
     xValue = server.arg("x").toInt();
     yValue = server.arg("y").toInt();
-    sliderValue = server.arg("slider").toInt();
-
-    // Print to Serial Monitor
-    Serial.print("X Value: ");
-    Serial.print(xValue);
-    Serial.print(", Y Value: ");
-    Serial.print(yValue);
-    Serial.print(", Slider Value: ");
-    Serial.println(sliderValue);
-
-    // Send OK response
+    sliderValue = server.arg("s").toInt();
+    Serial.printf("X: %d, Y: %d, Slider: %d\n", xValue, yValue, sliderValue);
     server.send(200, "text/plain", "OK");
   } else {
     server.send(400, "text/plain", "Bad Request");
@@ -186,20 +121,16 @@ void handleUpdate() {
 
 void setup() {
   Serial.begin(115200);
-
-  // Start the access point
   WiFi.softAP(ssid, password);
   Serial.println("Access point started");
-  Serial.print("IP Address: ");
-  Serial.println(WiFi.softAPIP());  // Print the IP address to access the server
+  Serial.printf("IP Address: %s\n", WiFi.softAPIP().toString().c_str());
 
-  // Start the server
-  server.on("/", handleRoot);        // Serve the HTML page
-  server.on("/update", handleUpdate); // Handle updates from joystick and slider
+  server.on("/", handleRoot);
+  server.on("/u", handleUpdate);
   server.begin();
   Serial.println("Server started");
 }
 
 void loop() {
-  server.handleClient();  // Listen for client requests
+  server.handleClient();
 }
