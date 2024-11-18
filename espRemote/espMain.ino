@@ -39,23 +39,37 @@ void escControl() {
 
 // Motor control based on joystick's yValue
 void motorControl() {
-    int motorSpeed = map(abs(yValue)-50, 50, 100, 0, 255); // Map yValue distance from 50 to motor speed
+    // Map and constrain yValue and hypotenuse for speed control
+    int motorSpeed = constrain(map(abs(yValue) - 50, 0, 50, 0, 255), 0, 255);
+    int hyp = constrain(map(sqrt(square(xValue) + square(yValue)) - 50, 0, 50, 0, 255), 0, 255);
 
-    if (yValue > 50) { // Move forward
-        digitalWrite(IN1, HIGH);
-        digitalWrite(IN2, LOW);
-        digitalWrite(IN12, HIGH);
-        digitalWrite(IN22, LOW);
-    } else if (yValue < 50) { // Move backward
+    // Dead zone handling
+    if (abs(yValue) < 50) { // Stop
         digitalWrite(IN1, LOW);
-        digitalWrite(IN2, HIGH);
+        digitalWrite(IN2, LOW);
         digitalWrite(IN12, LOW);
-        digitalWrite(IN22, HIGH);
-    } else { // Stop
-        motorSpeed = 0;
+        digitalWrite(IN22, LOW);
+        analogWrite(ENA, 0);
+        analogWrite(ENB, 0);
+        return;
     }
-    analogWrite(ENA, motorSpeed); // Set speed based on mapped value
+
+    // Set motor directions
+    bool forward = yValue > 0;
+    digitalWrite(IN1, forward);
+    digitalWrite(IN2, !forward);
+    digitalWrite(IN12, forward);
+    digitalWrite(IN22, !forward);
+
+    // Adjust speed for turns based on xValue
+    int leftSpeed = (xValue >= 0) ? motorSpeed : hyp;
+    int rightSpeed = (xValue >= 0) ? hyp : motorSpeed;
+
+    // Apply PWM speeds
+    analogWrite(ENA, leftSpeed);
+    analogWrite(ENB, rightSpeed);
 }
+
 
 void handleRoot() {
     server.send(200, "text/html", htmlPage);
