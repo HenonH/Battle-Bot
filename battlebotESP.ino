@@ -1,136 +1,124 @@
 #include <WiFi.h>
 #include <WebServer.h>
+#include <ESP32Servo.h>
+#include "html_page.h"
 
+// WiFi credentials
 const char* ssid = "henesp";
 const char* password = "12345678";
 
 WebServer server(80);
+Servo ESC; // ESC control instance
+Servo ENA_Servo; // Servo for Motor 1 speed
+Servo ENB_Servo; // Servo for Motor 2 speed
 
+// Motor pin definitions
+const int IN1 = 12;   // Motor 1 direction pin
+const int IN2 = 14;   // Motor 1 direction pin
+const int ENA = 25;    // Motor 1 speed PWM pin
+
+const int IN12 = 27;  // Motor 2 direction pin
+const int IN22 = 26;  // Motor 2 direction pin
+const int ENB = 33;   // Motor 2 speed PWM pin
+
+// Joystick values from HTML page
 int xValue = 50;
 int yValue = 50;
-int sliderValue = 0;
+int sliderValue = 0; // Used for controlling the ESC
 bool joystickEnabled = true;
 
-String htmlPage = R"=====( 
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Rhoomba Remote</title>
-  <style>
-    body { background: #DC143C; color: white; text-align: center; margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif; }
-    h1 { margin-top: 10px; }
-    #container { display: flex; justify-content: space-around; align-items: center; height: 100vh; }
-    #joystick-container { width: 300px; height: 300px; background: white; border-radius: 50%; position: relative; touch-action: none; }
-    #joystick { width: 75px; height: 75px; background: #ff4d4d; border-radius: 50%; position: absolute; top: 112.5px; left: 112.5px; }
-    #slider { width: 300px; }
-    button { margin-top: 20px; padding: 10px 20px; font-size: 16px; background: #4CAF50; color: white; border: none; cursor: pointer; }
-    button:active { background: #3e8e41; }
-  </style>
-</head>
-<body>
-  <h1>Rhoomba Remote</h1>
-  <div id="container">
-    <div>
-      <div id="joystick-container">
-        <div id="joystick"></div>
-      </div>
-      <p>X: <span id="xValue">50</span>, Y: <span id="yValue">50</span></p>
-      <button onclick="toggleControl()">Toggle Control</button>
-    </div>
-    <div>
-      <label>Control:</label>
-      <input type="range" id="slider" min="0" max="100" value="0">
-      <p>Slider: <span id="sliderValue">0</span></p>
-    </div>
-  </div>
-  <script>
-    const joystick = document.getElementById('joystick');
-    const container = document.getElementById('joystick-container');
-    const slider = document.getElementById('slider');
-    let xValue = 50, yValue = 50, sliderValue = 0, joystickEnabled = true;
-    let lastX = 50, lastY = 50, lastSlider = 0;
+void escControl() {
+    int pwmVal = map(sliderValue, 0, 100, 0, 60); // Map slider (0-100) to ESC range (0-60)
 
-    container.addEventListener('touchmove', (event) => {
-      if (!joystickEnabled) return;
-      event.preventDefault();
-      const rect = container.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      let x = event.touches[0].clientX - centerX;
-      let y = event.touches[0].clientY - centerY;
-      const distance = Math.min(Math.sqrt(x * x + y * y), 112.5);
-      const angle = Math.atan2(y, x);
-      x = distance * Math.cos(angle);
-      y = distance * Math.sin(angle);
-      joystick.style.left = `${x + 112.5}px`;
-      joystick.style.top = `${y + 112.5}px`;
-      xValue = Math.round((x / 112.5) * 50 + 50);
-      yValue = Math.round(50 - (y / 112.5) * 50);
-      document.getElementById('xValue').textContent = xValue;
-      document.getElementById('yValue').textContent = yValue;
-    });
-
-    container.addEventListener('touchend', () => {
-      joystick.style.left = '112.5px';
-      joystick.style.top = '112.5px';
-      xValue = yValue = 50;
-      document.getElementById('xValue').textContent = xValue;
-      document.getElementById('yValue').textContent = yValue;
-    });
-
-    slider.oninput = () => {
-      sliderValue = slider.value;
-      document.getElementById('sliderValue').textContent = sliderValue;
-    };
-
-    function toggleControl() {
-      joystickEnabled = !joystickEnabled;
-      alert(`Joystick Control ${joystickEnabled ? 'Enabled' : 'Disabled'}`);
+    // Dead zone to prevent unintended small values affecting ESC
+    if (pwmVal > 0 && pwmVal < 10) {
+        pwmVal = 0;
     }
 
-    function sendData() {
-      if (xValue !== lastX || yValue !== lastY || sliderValue !== lastSlider) {
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', `/u?x=${xValue}&y=${yValue}&s=${sliderValue}`, true);
-        xhr.send();
-        lastX = xValue; lastY = yValue; lastSlider = sliderValue;
-      }
+    ESC.write(pwmVal); // Write the PWM value to the ESC
+}
+
+// Motor control based on joystick's yValue
+void motorControl() {
+    int motorSpeed = map(abs(yValue - 50), 0, 50, 0, 180); // Map yValue distance from 50 to servo angle (0-180)
+
+    if (yValue > 50) { // Move forward
+        digitalWrite(IN1, HIGH);
+        digitalWrite(IN2, LOW);
+        digitalWrite(IN12, HIGH);
+        digitalWrite(IN22, LOW);
+    } else if (yValue < 50) { // Move backward
+        digitalWrite(IN1, LOW);
+        digitalWrite(IN2, HIGH);
+        digitalWrite(IN12, LOW);
+        digitalWrite(IN22, HIGH);
+    } else { // Stop
+        motorSpeed = 0;
+        digitalWrite(IN1, LOW);
+        digitalWrite(IN2, LOW);
+        digitalWrite(IN12, LOW);
+        digitalWrite(IN22, LOW);
     }
 
-    setInterval(sendData, 100);
-  </script>
-</body>
-</html>
-)=====";
+    // Set motor speeds using Servo.write
+    ENA_Servo.write(motorSpeed);
+    ENB_Servo.write(motorSpeed);
+
+    Serial.printf("Motor Speed (Servo Angle): %d\n", motorSpeed);
+}
 
 void handleRoot() {
-  server.send(200, "text/html", htmlPage);
+    server.send(200, "text/html", htmlPage);
 }
 
 void handleUpdate() {
-  if (server.hasArg("x") && server.hasArg("y") && server.hasArg("s")) {
-    xValue = server.arg("x").toInt();
-    yValue = server.arg("y").toInt();
-    sliderValue = server.arg("s").toInt();
-    Serial.printf("X: %d, Y: %d, Slider: %d\n", xValue, yValue, sliderValue);
-    server.send(200, "text/plain", "OK");
-  } else {
-    server.send(400, "text/plain", "Bad Request");
-  }
+    if (server.hasArg("x") && server.hasArg("y") && server.hasArg("s")) {
+        xValue = server.arg("x").toInt();
+        yValue = server.arg("y").toInt();
+        sliderValue = server.arg("s").toInt();
+
+        Serial.printf("X: %d, Y: %d, Slider: %d\n", xValue, yValue, sliderValue);
+        server.send(200, "text/plain", "OK");
+    } else {
+        server.send(400, "text/plain", "Bad Request");
+    }
 }
 
 void setup() {
-  Serial.begin(115200);
-  WiFi.softAP(ssid, password);
-  Serial.println("Access point started");
-  Serial.printf("IP Address: %s\n", WiFi.softAPIP().toString().c_str());
+    Serial.begin(115200);
 
-  server.on("/", handleRoot);
-  server.on("/u", handleUpdate);
-  server.begin();
-  Serial.println("Server started");
+    // Setup WiFi
+    WiFi.softAP(ssid, password);
+    Serial.println("Access point started");
+    Serial.printf("IP Address: %s\n", WiFi.softAPIP().toString().c_str());
+
+    // Setup server routes
+    server.on("/", handleRoot);
+    server.on("/u", handleUpdate);
+    server.begin();
+    Serial.println("Server started");
+
+    // Initialize ESC
+    ESC.attach(32); // Connect ESC to pin 32
+    ESC.write(0);   // Stop ESC initially
+    delay(1000);    // Allow time for ESC initialization
+
+    // Initialize servo motors
+    ENA_Servo.attach(ENA); // Attach servo to ENA pin
+    ENB_Servo.attach(ENB); // Attach servo to ENB 
+    ENA_Servo.write(0);   // Stop ESC initially
+    ENB_Servo.write(0);   // Stop ESC initially
+
+
+    // Initialize motor direction pins
+    pinMode(IN1, OUTPUT);
+    pinMode(IN2, OUTPUT);
+    pinMode(IN12, OUTPUT);
+    pinMode(IN22, OUTPUT);
 }
 
 void loop() {
-  server.handleClient();
+    escControl();       // Control ESC based on slider input
+    motorControl();     // Control motors based on joystick yValue
+    server.handleClient(); // Handle web server requests
 }
