@@ -28,7 +28,7 @@ int sliderValue = 0; // Used for controlling the ESC
 bool joystickEnabled = true;
 
 void escControl() {
-    int pwmVal = map(sliderValue, 0, 100, 0, 60); // Map slider (0-100) to ESC range (0-60)
+    int pwmVal = map(sliderValue, 0, 100, 0, 180); 
 
     // Dead zone to prevent unintended small values affecting ESC
     if (pwmVal > 0 && pwmVal < 10) {
@@ -40,7 +40,7 @@ void escControl() {
 
 // Motor control based on joystick's yValue
 void motorControl() {
-    int motorSpeed = map(abs(yValue - 50), 0, 50, 0, 180); // Map yValue distance from 50 to servo angle (0-180)
+    int motorSpeed = map(abs(yValue - 50), 0, 50, 0, 120); // Map yValue distance from 50 to servo angle (0-180)
 
     if (yValue > 50) { // Move forward
         digitalWrite(IN1, HIGH);
